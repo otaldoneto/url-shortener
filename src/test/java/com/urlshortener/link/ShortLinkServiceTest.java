@@ -8,9 +8,11 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.Optional;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -22,7 +24,8 @@ class ShortLinkServiceTest {
 
     private final ShortLinkRepository repository = mock(ShortLinkRepository.class);
     private final CodeGenerator codeGenerator = mock(CodeGenerator.class);
-    private final ShortLinkService service = new ShortLinkService(repository, codeGenerator,
+    private final LinkCache cache = mock(LinkCache.class);
+    private final ShortLinkService service = new ShortLinkService(repository, codeGenerator, cache,
             Clock.fixed(NOW, ZoneOffset.UTC));
 
     @BeforeEach
@@ -58,6 +61,48 @@ class ShortLinkServiceTest {
 
         assertThatThrownBy(() -> service.shorten("https://example.com")).isInstanceOf(IllegalStateException.class);
         verify(repository, never()).save(any());
+    }
+
+
+    @Test
+    void redirectUsesTheCacheWhenAvailable() {
+        when(cache.getTargetUrl("abc1234")).thenReturn(Optional.of("https://cached.example.com"));
+
+        String url = service.redirectTo("abc1234");
+
+        assertThat(url).isEqualTo("https://cached.example.com");
+        verify(repository, never()).findByCode(any());
+    }
+
+    @Test
+    void redirectFallsBackToTheDatabaseOnACacheMissAndFillsTheCache() {
+        when(cache.getTargetUrl("abc1234")).thenReturn(Optional.empty());
+        when(repository.findByCode("abc1234"))
+                .thenReturn(java.util.Optional.of(new ShortLink("abc1234", "https://db.example.com", NOW)));
+
+        String url = service.redirectTo("abc1234");
+
+        assertThat(url).isEqualTo("https://db.example.com");
+        verify(cache).cacheTargetUrl("abc1234", "https://db.example.com");
+    }
+
+    @Test
+    void redirectCountsAClickOnACacheHit() {
+        when(cache.getTargetUrl("abc1234")).thenReturn(Optional.of("https://cached.example.com"));
+
+        service.redirectTo("abc1234");
+
+        verify(cache).incrementClicks("abc1234");
+    }
+
+    @Test
+    void redirectToAnUnknownCodeDoesNotTouchTheCache() {
+        when(cache.getTargetUrl("abc1234")).thenReturn(Optional.empty());
+        when(repository.findByCode("abc1234")).thenReturn(java.util.Optional.empty());
+
+        assertThatThrownBy(() -> service.redirectTo("abc1234")).isInstanceOf(LinkNotFoundException.class);
+        verify(cache, never()).cacheTargetUrl(any(), any());
+        verify(cache, never()).incrementClicks(any());
     }
 
     @ParameterizedTest

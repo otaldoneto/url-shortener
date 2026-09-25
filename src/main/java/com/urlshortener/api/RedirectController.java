@@ -22,7 +22,7 @@ public class RedirectController {
     // which would make every later visit invisible to the click counter.
     @GetMapping("/{code:[0-9A-Za-z]{7}}")
     public ResponseEntity<Void> redirect(@PathVariable String code) {
-        URI target = URI.create(service.find(code).getTargetUrl());
+        URI target = URI.create(service.redirectTo(code));
         return ResponseEntity.status(HttpStatus.FOUND).location(target).build();
     }
 }
