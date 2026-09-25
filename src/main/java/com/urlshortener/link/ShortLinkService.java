@@ -15,11 +15,14 @@ public class ShortLinkService {
 
     private final ShortLinkRepository repository;
     private final CodeGenerator codeGenerator;
+    private final LinkCache cache;
     private final Clock clock;
 
-    public ShortLinkService(ShortLinkRepository repository, CodeGenerator codeGenerator, Clock clock) {
+    public ShortLinkService(ShortLinkRepository repository, CodeGenerator codeGenerator, LinkCache cache,
+                            Clock clock) {
         this.repository = repository;
         this.codeGenerator = codeGenerator;
+        this.cache = cache;
         this.clock = clock;
     }
 
@@ -39,6 +42,19 @@ public class ShortLinkService {
     @Transactional(readOnly = true)
     public ShortLink find(String code) {
         return repository.findByCode(code).orElseThrow(() -> new LinkNotFoundException(code));
+    }
+
+    // Used by the redirect: checks the cache first, falls back to the database on a miss, and always
+    // counts the click. "find" above is for the management API and does neither.
+    @Transactional(readOnly = true)
+    public String redirectTo(String code) {
+        String targetUrl = cache.getTargetUrl(code).orElseGet(() -> {
+            String url = find(code).getTargetUrl();
+            cache.cacheTargetUrl(code, url);
+            return url;
+        });
+        cache.incrementClicks(code);
+        return targetUrl;
     }
 
     // Only absolute http(s) URLs with a host: anything else (javascript:, ftp:, relative paths) would make
