@@ -17,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 class ShortLinkServiceTest {
 
@@ -26,7 +27,7 @@ class ShortLinkServiceTest {
     private final CodeGenerator codeGenerator = mock(CodeGenerator.class);
     private final LinkCache cache = mock(LinkCache.class);
     private final ShortLinkService service = new ShortLinkService(repository, codeGenerator, cache,
-            Clock.fixed(NOW, ZoneOffset.UTC));
+            Clock.fixed(NOW, ZoneOffset.UTC), new SimpleMeterRegistry());
 
     @BeforeEach
     void saveReturnsTheEntity() {
