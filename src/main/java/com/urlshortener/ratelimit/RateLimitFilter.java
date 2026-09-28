@@ -5,6 +5,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
@@ -22,9 +24,13 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private static final double REDIRECT_REFILL_PER_SECOND = 5;
 
     private final RateLimiter limiter;
+    private final Counter shortenRejections;
+    private final Counter redirectRejections;
 
-    public RateLimitFilter(RateLimiter limiter) {
+    public RateLimitFilter(RateLimiter limiter, MeterRegistry registry) {
         this.limiter = limiter;
+        this.shortenRejections = registry.counter("ratelimit.rejected", "operation", "shorten");
+        this.redirectRejections = registry.counter("ratelimit.rejected", "operation", "redirect");
     }
 
     @Override
@@ -36,10 +42,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
         boolean isRedirect = HttpMethod.GET.matches(request.getMethod()) && path.matches("/[0-9A-Za-z]{7}");
 
         if (isShorten && !limiter.tryConsume("shorten:" + ip, SHORTEN_CAPACITY, SHORTEN_REFILL_PER_SECOND)) {
+            shortenRejections.increment();
             tooManyRequests(response);
             return;
         }
         if (isRedirect && !limiter.tryConsume("redirect:" + ip, REDIRECT_CAPACITY, REDIRECT_REFILL_PER_SECOND)) {
+            redirectRejections.increment();
             tooManyRequests(response);
             return;
         }

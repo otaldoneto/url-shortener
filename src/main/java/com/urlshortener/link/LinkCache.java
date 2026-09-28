@@ -4,6 +4,8 @@ import java.time.Duration;
 import java.util.Optional;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 
 // Cache-aside on top of Redis: the target URL (with a TTL) and a click counter (with none, it must last).
 // Two separate keys because the two values have different lifetimes.
@@ -13,13 +15,19 @@ public class LinkCache {
     static final Duration TARGET_URL_TTL = Duration.ofHours(1);
 
     private final StringRedisTemplate redis;
+    private final Counter cacheHits;
+    private final Counter cacheMisses;
 
-    public LinkCache(StringRedisTemplate redis) {
+    public LinkCache(StringRedisTemplate redis, MeterRegistry registry) {
         this.redis = redis;
+        this.cacheHits = registry.counter("link.cache.access", "result", "hit");
+        this.cacheMisses = registry.counter("link.cache.access", "result", "miss");
     }
 
     public Optional<String> getTargetUrl(String code) {
-        return Optional.ofNullable(redis.opsForValue().get(targetUrlKey(code)));
+        String value = redis.opsForValue().get(targetUrlKey(code));
+        (value != null ? cacheHits : cacheMisses).increment();
+        return Optional.ofNullable(value);
     }
 
     public void cacheTargetUrl(String code, String targetUrl) {

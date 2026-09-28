@@ -3,8 +3,11 @@ package com.urlshortener.link;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Clock;
+import java.time.ZoneOffset;
 import java.util.Locale;
+import io.micrometer.core.instrument.Counter;
 import org.springframework.stereotype.Service;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -17,13 +20,16 @@ public class ShortLinkService {
     private final CodeGenerator codeGenerator;
     private final LinkCache cache;
     private final Clock clock;
+    private final Counter linksShortened;
+
 
     public ShortLinkService(ShortLinkRepository repository, CodeGenerator codeGenerator, LinkCache cache,
-                            Clock clock) {
+                            Clock clock, MeterRegistry registry) {
         this.repository = repository;
         this.codeGenerator = codeGenerator;
         this.cache = cache;
         this.clock = clock;
+        this.linksShortened = registry.counter("links.shortened");
     }
 
     @Transactional
@@ -31,9 +37,10 @@ public class ShortLinkService {
         String targetUrl = validate(url);
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             String code = codeGenerator.generate();
-            // The unique constraint in the database is the real guarantee; this check only avoids the error
             if (!repository.existsByCode(code)) {
-                return repository.save(new ShortLink(code, targetUrl, clock.instant()));
+                ShortLink link = repository.save(new ShortLink(code, targetUrl, clock.instant()));
+                linksShortened.increment();
+                return link;
             }
         }
         throw new IllegalStateException("Could not generate a unique code after " + MAX_ATTEMPTS + " attempts");
