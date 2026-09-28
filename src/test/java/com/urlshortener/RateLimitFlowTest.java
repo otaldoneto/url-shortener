@@ -4,6 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -15,20 +21,29 @@ import org.springframework.test.web.servlet.assertj.MockMvcTester;
 // End to end: the filter actually blocks requests once the bucket for an IP runs dry
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, RateLimitFlowTest.FixedClockConfig.class})
 class RateLimitFlowTest {
+
+    @TestConfiguration
+    static class FixedClockConfig {
+        @Bean
+        @Primary
+        Clock fixedClock() {
+            return Clock.fixed(Instant.parse("2026-09-25T12:00:00Z"), ZoneOffset.UTC);
+        }
+    }
 
     @Autowired
     MockMvcTester mvc;
+
     @Autowired
     StringRedisTemplate redis;
 
-    // Spring reaproveita o mesmo contexto (e o mesmo Redis) entre classes de teste com a mesma
-    // configuração, então um bucket de outra classe pode vazar para esta se não for limpo antes.
     @BeforeEach
     void cleanRedis() {
         redis.getConnectionFactory().getConnection().serverCommands().flushAll();
     }
+
 
     @Test
     void blocksShorteningAfterTheBucketIsEmpty() {
